@@ -9,27 +9,42 @@
 #undef main
 using namespace std;
 
-// Cấu trúc lưu vị trí (x, y)
+// Structure to store position (x, y)
 struct Position {
     int x, y;
 };
 
-// Cấu trúc cho quả cầu lửa
+// Structure for fireball
 struct Fireball {
-    Position pos;        // Vị trí của quả cầu lửa
-    float velocityX, velocityY; // Vận tốc theo trục x và y
-    bool active;         // Trạng thái hoạt động
-    bool scored;         // Đã được tính điểm hay chưa
+    Position pos;        // Position of the fireball
+    float velocityX, velocityY; // Velocity along x and y axes
+    bool active;         // Active state
+    bool scored;         // Whether scored or not
 };
 
-// Cấu trúc cho ngôi sao
+// Structure for star
 struct Star {
-    Position pos;        // Vị trí của ngôi sao
-    float velocityY;     // Vận tốc rơi theo trục y
-    bool active;         // Trạng thái hoạt động
+    Position pos;        // Position of the star
+    float velocityY;     // Falling velocity along y-axis
+    bool active;         // Active state
 };
 
-// Hàm đọc điểm cao nhất từ file
+// Structure for button
+struct Button {
+    SDL_Rect rect;       // Position and size of the button
+    string text;         // Text displayed on the button
+    bool hovered;        // Hover state
+};
+
+// Game states
+enum GameState {
+    MENU,
+    PLAYING,
+    PAUSED,
+    GAME_OVER
+};
+
+// Function to load high score from file
 int loadHighscore() {
     ifstream file("highscore.txt");
     int highscore = 0;
@@ -40,287 +55,450 @@ int loadHighscore() {
     return highscore;
 }
 
-// Hàm lưu điểm cao nhất vào file
+// Function to save high score to file
 void saveHighscore(int highscore) {
     ofstream file("highscore.txt");
     if (file.is_open()) {
         file << highscore;
         file.close();
     } else {
-        cerr << "Không thể mở file để lưu điểm cao nhất!" << endl;
+        cerr << "Cannot open file to save high score!" << endl;
+    }
+}
+
+// Function to render a button
+void renderButton(SDL_Renderer* renderer, TTF_Font* font, Button& button, SDL_Color color) {
+    SDL_Rect buttonRect = button.rect;
+    if (button.hovered) {
+        buttonRect.w *= 1.1; // Scale up by 10% on hover
+        buttonRect.h *= 1.1;
+    }
+
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    SDL_RenderFillRect(renderer, &buttonRect);
+
+    SDL_Surface* surface = TTF_RenderText_Solid(font, button.text.c_str(), {255, 255, 255});
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Rect textRect = {buttonRect.x + (buttonRect.w - surface->w) / 2, buttonRect.y + (buttonRect.h - surface->h) / 2, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &textRect);
+
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
+}
+
+// Handle menu events
+void handleMenuEvents(SDL_Event& event, vector<Button>& menuButtons, GameState& gameState, bool& running, Mix_Music* backgroundMusic, Mix_Chunk* jumpSound, Mix_Chunk* collectStarSound, Mix_Chunk* hitSound, Mix_Chunk* pauseSound, bool& soundOn, bool& showInstructionsPanel, Button& closeInstructionsButton) {
+    int mouseX, mouseY;
+    SDL_GetMouseState(&mouseX, &mouseY);
+
+    // Handle menu buttons
+    for (auto& button : menuButtons) {
+        button.hovered = (mouseX >= button.rect.x && mouseX <= button.rect.x + button.rect.w &&
+                          mouseY >= button.rect.y && mouseY <= button.rect.y + button.rect.h);
+        if (event.type == SDL_MOUSEBUTTONDOWN && button.hovered) {
+            if (button.text == "Play") {
+                gameState = PLAYING;
+            } else if (button.text.find("Sound") != string::npos) {
+                soundOn = !soundOn;
+                if (soundOn) {
+                    Mix_PlayMusic(backgroundMusic, -1); // Play music
+                    button.text = "Sound: On";
+                } else {
+                    Mix_PauseMusic(); // Pause music
+                    Mix_HaltChannel(-1); // Stop all sound effects
+                    button.text = "Sound: Off";
+                }
+            } else if (button.text == "Exit") {
+                running = false;
+            } else if (button.text == "Instructions") {
+                showInstructionsPanel = true;
+            }
+        }
+    }
+
+    // Handle close button for instructions panel
+    if (showInstructionsPanel) {
+        closeInstructionsButton.hovered = (mouseX >= closeInstructionsButton.rect.x && mouseX <= closeInstructionsButton.rect.x + closeInstructionsButton.rect.w &&
+                                           mouseY >= closeInstructionsButton.rect.y && mouseY <= closeInstructionsButton.rect.y + closeInstructionsButton.rect.h);
+        if (event.type == SDL_MOUSEBUTTONDOWN && closeInstructionsButton.hovered) {
+            showInstructionsPanel = false;
+        }
+    }
+}
+
+// Handle paused events
+void handlePausedEvents(SDL_Event& event, vector<Button>& pausedButtons, GameState& gameState, bool& running, Mix_Chunk* pauseSound, bool soundOn, Position& playerPos, vector<Fireball>& fireballs, vector<Star>& stars, int& spawnTimer, int& starSpawnTimer, int& countdownTime, bool& razzyMode, int& razzyModeMessageTimer, float& fireballSpeed, int& spawnInterval, int& lives, int& score, bool& isJumping, bool& isMovingRight, float& horizontalVelocity, float& verticalVelocity) {
+    int mouseX, mouseY;
+    SDL_GetMouseState(&mouseX, &mouseY);
+
+    for (auto& button : pausedButtons) {
+        button.hovered = (mouseX >= button.rect.x && mouseX <= button.rect.x + button.rect.w &&
+                          mouseY >= button.rect.y && mouseY <= button.rect.y + button.rect.h);
+        if (event.type == SDL_MOUSEBUTTONDOWN && button.hovered) {
+            if (button.text == "Resume") {
+                gameState = PLAYING;
+                if (soundOn && pauseSound) {
+                    Mix_PlayChannel(-1, pauseSound, 0);
+                }
+            } else if (button.text == "Quit") {
+                running = false;
+            } else if (button.text == "Back to Menu") {
+                gameState = MENU;
+                playerPos = {400, 400};
+                isJumping = false;
+                isMovingRight = true;
+                horizontalVelocity = 0.0f;
+                verticalVelocity = 0.0f;
+                fireballs.clear();
+                stars.clear();
+                spawnTimer = 0;
+                starSpawnTimer = 0;
+                countdownTime = 20 * 60;
+                razzyMode = false;
+                razzyModeMessageTimer = 0;
+                fireballSpeed = 3.0f;
+                spawnInterval = 120;
+                lives = 5;
+                score = 0;
+            }
+        }
+    }
+}
+
+// Render menu
+void renderMenu(SDL_Renderer* renderer, TTF_Font* font, SDL_Texture* back0_texture, vector<Button>& menuButtons, bool showInstructionsPanel, Button& closeInstructionsButton) {
+    if (back0_texture) {
+        SDL_RenderCopy(renderer, back0_texture, NULL, NULL);
+    }
+
+    for (auto& button : menuButtons) {
+        renderButton(renderer, font, button, {100, 100, 100, 255});
+    }
+
+    // Render instructions panel if visible
+    if (showInstructionsPanel) {
+        // Draw semi-transparent panel
+        SDL_Rect panelRect = {212, 88, 600, 400}; // Centered: (1024-600)/2 = 212, (576-400)/2 = 88
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 200); // Semi-transparent gray
+        SDL_RenderFillRect(renderer, &panelRect);
+
+        // Draw instructions text
+        SDL_Color white = {255, 255, 255, 255};
+        vector<string> instructions = {
+            "Game Instructions:",
+            "Avoid fireballs, collect stars!",
+            "A/D: Move left/right",
+            "W: Jump",
+            "P: Pause game"
+        };
+
+        int yPos = 120; // Start text inside the panel
+        for (const auto& line : instructions) {
+            SDL_Surface* instructionsSurface = TTF_RenderText_Blended(font, line.c_str(), white);
+            if (instructionsSurface) {
+                SDL_Texture* instructionsTexture = SDL_CreateTextureFromSurface(renderer, instructionsSurface);
+                if (instructionsTexture) {
+                    SDL_Rect instructionsRect = {(1024 - instructionsSurface->w) / 2, yPos, instructionsSurface->w, instructionsSurface->h};
+                    SDL_RenderCopy(renderer, instructionsTexture, NULL, &instructionsRect);
+                    SDL_DestroyTexture(instructionsTexture);
+                }
+                SDL_FreeSurface(instructionsSurface);
+            }
+            yPos += 30; // Move down for the next line
+        }
+
+        // Render close button
+        renderButton(renderer, font, closeInstructionsButton, {100, 100, 100, 255});
+    }
+}
+
+// Render paused screen
+void renderPaused(SDL_Renderer* renderer, TTF_Font* font, vector<Button>& pausedButtons, int score) {
+    SDL_Color white = {255, 255, 255, 255};
+
+    // Draw "Paused" text
+    SDL_Surface* pausedSurface = TTF_RenderText_Solid(font, "Paused", white);
+    if (pausedSurface) {
+        SDL_Texture* pausedTexture = SDL_CreateTextureFromSurface(renderer, pausedSurface);
+        if (pausedTexture) {
+            SDL_Rect pausedRect = {(1024 - pausedSurface->w) / 2, (576 - pausedSurface->h) / 2 - 60, pausedSurface->w, pausedSurface->h};
+            SDL_RenderCopy(renderer, pausedTexture, NULL, &pausedRect);
+            SDL_DestroyTexture(pausedTexture);
+        }
+        SDL_FreeSurface(pausedSurface);
+    }
+
+    // Draw current score
+    string pauseScoreText = "Current Score: " + to_string(score);
+    SDL_Surface* pauseScoreSurface = TTF_RenderText_Blended(font, pauseScoreText.c_str(), white);
+    if (pauseScoreSurface) {
+        SDL_Texture* pauseScoreTexture = SDL_CreateTextureFromSurface(renderer, pauseScoreSurface);
+        if (pauseScoreTexture) {
+            SDL_Rect pauseScoreRect = {(1024 - pauseScoreSurface->w) / 2, (576 - pauseScoreSurface->h) / 2 - 20, pauseScoreSurface->w, pauseScoreSurface->h};
+            SDL_RenderCopy(renderer, pauseScoreTexture, NULL, &pauseScoreRect);
+            SDL_DestroyTexture(pauseScoreTexture);
+        }
+        SDL_FreeSurface(pauseScoreSurface);
+    }
+
+    // Render buttons
+    for (auto& button : pausedButtons) {
+        renderButton(renderer, font, button, {100, 100, 100, 255});
     }
 }
 
 int main(int argc, char* argv[]) {
-    // Khởi tạo SDL với video và âm thanh
+    // Initialize SDL with video and audio
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
-        cerr << "SDL không thể khởi tạo! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "SDL cannot initialize! SDL_Error: " << SDL_GetError() << endl;
         return 1;
     }
 
-    // Khởi tạo SDL_image
+    // Initialize SDL_image
     if (!(IMG_Init(IMG_INIT_PNG))) {
-        cerr << "SDL_image không thể khởi tạo! IMG_Error: " << IMG_GetError() << endl;
+        cerr << "SDL_image cannot initialize! IMG_Error: " << IMG_GetError() << endl;
+        SDL_Quit();
         return 1;
     }
 
-    // Khởi tạo SDL_ttf
+    // Initialize SDL_ttf
     if (TTF_Init() < 0) {
-        cerr << "SDL_ttf không thể khởi tạo! TTF_Error: " << TTF_GetError() << endl;
+        cerr << "SDL_ttf cannot initialize! TTF_Error: " << TTF_GetError() << endl;
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
-    // Khởi tạo SDL_mixer
+    // Initialize SDL_mixer
     if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-        cerr << "SDL_mixer không thể khởi tạo! SDL_Error: " << Mix_GetError() << endl;
+        cerr << "SDL_mixer cannot initialize! SDL_Error: " << Mix_GetError() << endl;
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
-    // Tạo cửa sổ game
+    // Create game window
     SDL_Window* window = SDL_CreateWindow("DINO RUN",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           1024, 576, SDL_WINDOW_SHOWN);
     if (!window) {
-        cerr << "Không thể tạo cửa sổ! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot create window! SDL_Error: " << SDL_GetError() << endl;
+        Mix_CloseAudio();
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
-    // Tạo renderer
+    // Create renderer
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer) {
-        cerr << "Renderer không thể tạo ra! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot create renderer! SDL_Error: " << SDL_GetError() << endl;
+        SDL_DestroyWindow(window);
+        Mix_CloseAudio();
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
-    // Tải font chữ
+    // Load font
     TTF_Font* font = TTF_OpenFont("font.ttf", 20);
     if (!font) {
-        cerr << "Không thể tải font! TTF_Error: " << TTF_GetError() << endl;
+        cerr << "Cannot load font! TTF_Error: " << TTF_GetError() << endl;
     }
 
-    // Tải các texture
+    // Load textures
     SDL_Texture* back0_texture = IMG_LoadTexture(renderer, "images/back0.png");
     if (!back0_texture) {
-        cerr << "Không thể tải back0.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load back0.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* back1_texture = IMG_LoadTexture(renderer, "images/back1.png");
     if (!back1_texture) {
-        cerr << "Không thể tải back1.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load back1.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* player_jump_texture = IMG_LoadTexture(renderer, "images/jump.png");
     if (!player_jump_texture) {
-        cerr << "Không thể tải jump.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load jump.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* player_run_texture = IMG_LoadTexture(renderer, "images/run.png");
     if (!player_run_texture) {
-        cerr << "Không thể tải run.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load run.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* player_stop_texture = IMG_LoadTexture(renderer, "images/stop.png");
     if (!player_stop_texture) {
-        cerr << "Không thể tải stop.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load stop.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* fireball_texture = IMG_LoadTexture(renderer, "images/fireball.png");
     if (!fireball_texture) {
-        cerr << "Không thể tải fireball.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load fireball.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* heart_texture = IMG_LoadTexture(renderer, "images/tim.png");
     if (!heart_texture) {
-        cerr << "Không thể tải tim.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load tim.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
     SDL_Texture* star_texture = IMG_LoadTexture(renderer, "images/sao.png");
     if (!star_texture) {
-        cerr << "Không thể tải sao.png! SDL_Error: " << SDL_GetError() << endl;
+        cerr << "Cannot load sao.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
-    // Tải âm thanh
-    Mix_Music* backgroundMusic = Mix_LoadMUS("C:\\ProjectsSDL\\DemoSDL\\audio\\background_music.mp3");
+    // Load audio with updated relative paths
+    Mix_Music* backgroundMusic = Mix_LoadMUS("audio/background_music.mp3");
     if (!backgroundMusic) {
-        cerr << "Không thể tải background music! SDL_Error: " << Mix_GetError() << endl;
-    } else {
-        Mix_PlayMusic(backgroundMusic, -1); // Phát nhạc nền lặp lại
+        cerr << "Cannot load background music! SDL_Error: " << Mix_GetError() << endl;
     }
 
-    Mix_Chunk* jumpSound = Mix_LoadWAV("C:\\ProjectsSDL\\DemoSDL\\audio\\jump.wav");
+    Mix_Chunk* jumpSound = Mix_LoadWAV("audio/jump.wav");
     if (!jumpSound) {
-        cerr << "Không thể tải jump.wav! SDL_Error: " << Mix_GetError() << endl;
+        cerr << "Cannot load jump.wav! SDL_Error: " << SDL_GetError() << endl;
     }
 
-    Mix_Chunk* collectStarSound = Mix_LoadWAV("C:\\ProjectsSDL\\DemoSDL\\audio\\collect_star.wav");
+    Mix_Chunk* collectStarSound = Mix_LoadWAV("audio/collect_star.wav");
     if (!collectStarSound) {
-        cerr << "Không thể tải collect_star.wav! SDL_Error: " << Mix_GetError() << endl;
+        cerr << "Cannot load collect_star.wav! SDL_Error: " << Mix_GetError() << endl;
     }
 
-    Mix_Chunk* hitSound = Mix_LoadWAV("C:\\ProjectsSDL\\DemoSDL\\audio\\hit.wav");
+    Mix_Chunk* hitSound = Mix_LoadWAV("audio/hit.wav");
     if (!hitSound) {
-        cerr << "Không thể tải hit.wav! SDL_Error: " << Mix_GetError() << endl;
+        cerr << "Cannot load hit.wav! SDL_Error: " << SDL_GetError() << endl;
     }
 
-    Mix_Chunk* pauseSound = Mix_LoadWAV("C:\\ProjectsSDL\\DemoSDL\\audio\\pause.wav");
+    Mix_Chunk* pauseSound = Mix_LoadWAV("audio/pause.wav");
     if (!pauseSound) {
-        cerr << "Không thể tải pause.wav! SDL_Error: " << Mix_GetError() << endl;
+        cerr << "Cannot load pause.wav! SDL_Error: " << SDL_GetError() << endl;
     }
 
-    // Các biến game
-    bool quit = false;           // Biến để thoát game
-    bool paused = false;         // Trạng thái tạm dừng
-    bool gameOver = false;       // Trạng thái game over
-    int razzyModeMessageTimer = 0; // Thời gian hiển thị thông báo "Razzy Mode!"
-    const Uint8* currentKeyStates = SDL_GetKeyboardState(NULL); // Trạng thái phím
-    const int frameDelay = 1000 / 60; // Giới hạn FPS (60 FPS)
+    // Game variables
+    bool running = false;           // Variable to exit game
+    GameState gameState = MENU;     // Initial state is MENU
+    int razzyModeMessageTimer = 0;  // Timer for "Razzy Mode!" message
+    const Uint8* currentKeyStates = SDL_GetKeyboardState(NULL); // Keyboard state
+    const int frameDelay = 1000 / 60; // Limit FPS (60 FPS)
 
-    // Vị trí người chơi
-    Position playerPos = {400, 400}; // Vị trí ban đầu
-    bool isJumping = false;          // Trạng thái nhảy
-    bool isMovingRight = true;       // Hướng di chuyển
-    float horizontalVelocity = 0.0f; // Vận tốc ngang
-    float verticalVelocity = 0.0f;   // Vận tốc dọc
-    const float moveSpeed = 5.0f;    // Tốc độ di chuyển ngang
-    const float jumpForce = -13.0f;  // Lực nhảy
-    const float gravity = 0.5f;      // Trọng lực
+    // Player position
+    Position playerPos = {400, 400}; // Initial position
+    bool isJumping = false;          // Jumping state
+    bool isMovingRight = true;       // Movement direction
+    float horizontalVelocity = 0.0f; // Horizontal velocity
+    float verticalVelocity = 0.0f;   // Vertical velocity
+    const float moveSpeed = 5.0f;    // Horizontal movement speed
+    const float jumpForce = -13.0f;  // Jump force
+    const float gravity = 0.5f;      // Gravity
 
-    // Kích thước trái tim (mạng)
+    // Heart (lives) dimensions
     const int heartWidth = 32;
     const int heartHeight = 32;
 
-    // Biến cho quả cầu lửa
-    vector<Fireball> fireballs;      // Danh sách quả cầu lửa
-    const int fireballWidth = 50;    // Chiều rộng quả cầu lửa
-    const int fireballHeight = 50;   // Chiều cao quả cầu lửa
-    float fireballSpeed = 3.0f;      // Tốc độ quả cầu lửa
-    int spawnTimer = 0;              // Thời gian để sinh quả cầu lửa
-    int spawnInterval = 120;         // Khoảng thời gian giữa các lần sinh
+    // Fireball variables
+    vector<Fireball> fireballs;      // List of fireballs
+    const int fireballWidth = 50;    // Fireball width
+    const int fireballHeight = 50;   // Fireball height
+    float fireballSpeed = 3.0f;      // Fireball speed
+    int spawnTimer = 0;              // Timer for fireball spawning
+    int spawnInterval = 120;         // Interval between fireball spawns
 
-    // Biến cho ngôi sao
-    vector<Star> stars;              // Danh sách ngôi sao
-    const int starWidth = 64;        // Chiều rộng ngôi sao
-    const int starHeight = 64;       // Chiều cao ngôi sao
-    const float starFallSpeed = 2.0f;// Tốc độ rơi của ngôi sao
-    const int starSpawnInterval = 300; // Khoảng thời gian giữa các lần sinh ngôi sao
-    int starSpawnTimer = 0;          // Thời gian để sinh ngôi sao
+    // Star variables
+    vector<Star> stars;              // List of stars
+    const int starWidth = 64;        // Star width
+    const int starHeight = 64;       // Star height
+    const float starFallSpeed = 2.0f;// Star fall speed
+    const int starSpawnInterval = 300; // Interval between star spawns
+    int starSpawnTimer = 0;          // Timer for star spawning
 
-    // Thời gian game
-    int countdownTime = 20 * 60;     // Thời gian đếm ngược (30 giây)
-    bool razzyMode = false;          // Chế độ Razzy
+    // Game timer
+    int countdownTime = 20 * 60;     // Countdown timer (20 seconds)
+    bool razzyMode = false;          // Razzy mode
 
-    // Số mạng
+    // Lives
     int lives = 5;
 
-    // Điểm số
+    // Score
     int score = 0;
     int highscore = loadHighscore();
 
-    // Màu sắc
+    // Colors
     SDL_Color white = {255, 255, 255, 255};
 
-    // Hiển thị màn hình bắt đầu
-    if (font) {
-        string startText = "Press to Space to Start";
-        SDL_Surface* startSurface = TTF_RenderText_Blended(font, startText.c_str(), white);
-        if (!startSurface) {
-            cerr << "Không thể tạo surface cho text! TTF_Error: " << TTF_GetError() << endl;
-        } else {
-            SDL_Texture* startTexture = SDL_CreateTextureFromSurface(renderer, startSurface);
-            if (!startTexture) {
-                cerr << "Không thể tạo texture cho text! SDL_Error: " << SDL_GetError() << endl;
-            } else {
-                SDL_Rect startRect = {(1024 - startSurface->w) / 2, 576 - startSurface->h - 135, startSurface->w, startSurface->h};
-                if (back0_texture) {
-                    SDL_RenderCopy(renderer, back0_texture, NULL, NULL);
-                }
-                SDL_RenderCopy(renderer, startTexture, NULL, &startRect);
+    // Sound control
+    bool soundOn = true;
 
-                // Thêm hướng dẫn chơi (đã xóa "S: Rơi Nhanh")
-                string instructionsText = "A/D: Move, W: Jump, P: Pause";
-                SDL_Surface* instructionsSurface = TTF_RenderText_Blended(font, instructionsText.c_str(), white);
-                if (instructionsSurface) {
-                    SDL_Texture* instructionsTexture = SDL_CreateTextureFromSurface(renderer, instructionsSurface);
-                    if (instructionsTexture) {
-                        SDL_Rect instructionsRect = {(1024 - instructionsSurface->w) / 2, 576 - instructionsSurface->h - 100, instructionsSurface->w, instructionsSurface->h};
-                        SDL_RenderCopy(renderer, instructionsTexture, NULL, &instructionsRect);
-                        SDL_DestroyTexture(instructionsTexture);
-                    }
-                    SDL_FreeSurface(instructionsSurface);
-                }
+    // Instructions panel control
+    bool showInstructionsPanel = false;
 
-                SDL_RenderPresent(renderer);
-                SDL_DestroyTexture(startTexture);
-            }
-            SDL_FreeSurface(startSurface);
-        }
-    } else {
-        if (back0_texture) {
-            SDL_RenderCopy(renderer, back0_texture, NULL, NULL);
-            SDL_RenderPresent(renderer);
-        }
+    // Initialize menu buttons with "Instructions" button
+    vector<Button> menuButtons = {
+        {{112, 200, 200, 50}, "Play", false},
+        {{112, 300, 200, 50}, "Sound: On", false},
+        {{112, 400, 200, 50}, "Exit", false},
+        {{112, 500, 200, 50}, "Instructions", false}
+    };
+
+    // Initialize close button for instructions panel
+    Button closeInstructionsButton = {{412, 430, 200, 50}, "Close", false}; // Centered at bottom of 600x400 panel
+
+    // Initialize paused buttons
+    vector<Button> pausedButtons = {
+        {{412, 250, 200, 50}, "Resume", false},
+        {{412, 350, 200, 50}, "Quit", false},
+        {{412, 450, 200, 50}, "Back to Menu", false}
+    };
+
+    // Initialize restart button for game over
+    Button restartButton = {{412, 350, 200, 50}, "Restart", false};
+
+    // Start playing music if sound is on
+    if (soundOn && backgroundMusic) {
+        Mix_PlayMusic(backgroundMusic, -1);
     }
 
-    SDL_Event startEvent;
-    bool gameStarted = false;
-
-    // Chờ người chơi nhấn SPACE để bắt đầu
-    while (!gameStarted) {
-        while (SDL_PollEvent(&startEvent)) {
-            if (startEvent.type == SDL_KEYDOWN && startEvent.key.keysym.sym == SDLK_SPACE) {
-                gameStarted = true;
-            }
-            if (startEvent.type == SDL_QUIT) {
-                // Dọn dẹp tài nguyên trước khi thoát
-                if (back0_texture) SDL_DestroyTexture(back0_texture);
-                if (back1_texture) SDL_DestroyTexture(back1_texture);
-                if (player_jump_texture) SDL_DestroyTexture(player_jump_texture);
-                if (player_run_texture) SDL_DestroyTexture(player_run_texture);
-                if (player_stop_texture) SDL_DestroyTexture(player_stop_texture);
-                if (fireball_texture) SDL_DestroyTexture(fireball_texture);
-                if (heart_texture) SDL_DestroyTexture(heart_texture);
-                if (star_texture) SDL_DestroyTexture(star_texture);
-                if (font) TTF_CloseFont(font);
-                if (backgroundMusic) Mix_FreeMusic(backgroundMusic);
-                if (jumpSound) Mix_FreeChunk(jumpSound);
-                if (collectStarSound) Mix_FreeChunk(collectStarSound);
-                if (hitSound) Mix_FreeChunk(hitSound);
-                if (pauseSound) Mix_FreeChunk(pauseSound);
-                Mix_CloseAudio();
-                SDL_DestroyRenderer(renderer);
-                SDL_DestroyWindow(window);
-                TTF_Quit();
-                IMG_Quit();
-                SDL_Quit();
-                return 0;
-            }
-        }
-    }
-
-    // Vòng lặp chính của game
+    // Main game loop
+    running = true;
     SDL_Event e;
-    while (!quit) {
+    while (running) {
         Uint32 frameStart = SDL_GetTicks();
 
-        // Xử lý sự kiện
+        // Handle events
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
-                quit = true;
+                running = false;
             }
-            if (e.type == SDL_KEYDOWN) {
-                if (e.key.keysym.sym == SDLK_w && !isJumping && !paused && !gameOver) {
-                    isJumping = true;
-                    verticalVelocity = jumpForce;
-                    if (jumpSound) Mix_PlayChannel(-1, jumpSound, 0);
+            if (gameState == MENU) {
+                handleMenuEvents(e, menuButtons, gameState, running, backgroundMusic, jumpSound, collectStarSound, hitSound, pauseSound, soundOn, showInstructionsPanel, closeInstructionsButton);
+            } else if (gameState == PLAYING) {
+                if (e.type == SDL_KEYDOWN) {
+                    if (e.key.keysym.sym == SDLK_w && !isJumping) {
+                        isJumping = true;
+                        verticalVelocity = jumpForce;
+                        if (soundOn && jumpSound) {
+                            Mix_PlayChannel(-1, jumpSound, 0);
+                        }
+                    }
+                    if (e.key.keysym.sym == SDLK_p) {
+                        gameState = PAUSED;
+                        if (soundOn && pauseSound) {
+                            Mix_PlayChannel(-1, pauseSound, 0);
+                        }
+                    }
                 }
-                if (e.key.keysym.sym == SDLK_p && !gameOver) {
-                    paused = !paused;
-                    if (pauseSound) Mix_PlayChannel(-1, pauseSound, 0);
-                }
-                if (e.key.keysym.sym == SDLK_r && gameOver) {
-                    // Đặt lại trạng thái game
-                    gameOver = false;
-                    paused = false;
+            } else if (gameState == PAUSED) {
+                handlePausedEvents(e, pausedButtons, gameState, running, pauseSound, soundOn, playerPos, fireballs, stars, spawnTimer, starSpawnTimer, countdownTime, razzyMode, razzyModeMessageTimer, fireballSpeed, spawnInterval, lives, score, isJumping, isMovingRight, horizontalVelocity, verticalVelocity);
+            } else if (gameState == GAME_OVER) {
+                int mouseX, mouseY;
+                SDL_GetMouseState(&mouseX, &mouseY);
+                restartButton.hovered = (mouseX >= restartButton.rect.x && mouseX <= restartButton.rect.x + restartButton.rect.w &&
+                                        mouseY >= restartButton.rect.y && mouseY <= restartButton.rect.y + restartButton.rect.h);
+                if (e.type == SDL_MOUSEBUTTONDOWN && restartButton.hovered) {
+                    // Reset game state
+                    gameState = PLAYING;
                     playerPos = {400, 400};
                     isJumping = false;
                     isMovingRight = true;
@@ -341,9 +519,9 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Bỏ qua cập nhật game nếu đang tạm dừng hoặc game over
-        if (!paused && !gameOver) {
-            // Di chuyển ngang
+        // Update game logic if not paused or in game over state
+        if (gameState == PLAYING) {
+            // Horizontal movement
             horizontalVelocity = 0.0f;
             if (currentKeyStates[SDL_SCANCODE_A]) {
                 horizontalVelocity = -moveSpeed;
@@ -354,12 +532,12 @@ int main(int argc, char* argv[]) {
                 isMovingRight = true;
             }
 
-            // Cập nhật vị trí ngang
+            // Update horizontal position
             playerPos.x += static_cast<int>(horizontalVelocity);
             if (playerPos.x < 0) playerPos.x = 0;
             if (playerPos.x > 1024 - 64) playerPos.x = 1024 - 64;
 
-            // Cập nhật vị trí dọc (nhảy)
+            // Update vertical position (jumping)
             if (isJumping) {
                 playerPos.y += static_cast<int>(verticalVelocity);
                 verticalVelocity += gravity;
@@ -370,14 +548,14 @@ int main(int argc, char* argv[]) {
                 verticalVelocity = 0.0f;
             }
 
-            // Logic đếm ngược và chế độ Razzy
+            // Countdown logic and Razzy mode
             if (!razzyMode) {
                 countdownTime--;
                 if (countdownTime <= 0) {
                     razzyMode = true;
                     fireballSpeed = 5.0f;
                     spawnInterval = 60;
-                    razzyModeMessageTimer = 180; // Hiển thị "Razzy Mode!" trong 3 giây
+                    razzyModeMessageTimer = 180; // Display "Razzy Mode!" for 3 seconds
                 }
             } else {
                 if (countdownTime > 0) {
@@ -389,7 +567,7 @@ int main(int argc, char* argv[]) {
                 if (countdownTime < 0) countdownTime = 0;
             }
 
-            // Sinh quả cầu lửa
+            // Spawn fireballs
             spawnTimer++;
             if (spawnTimer >= spawnInterval) {
                 Fireball fireball;
@@ -411,7 +589,7 @@ int main(int argc, char* argv[]) {
                 spawnTimer = 0;
             }
 
-            // Cập nhật quả cầu lửa
+            // Update fireballs
             for (int i = 0; i < fireballs.size(); i++) {
                 if (fireballs[i].active) {
                     fireballs[i].pos.x += static_cast<int>(fireballs[i].velocityX);
@@ -422,9 +600,11 @@ int main(int argc, char* argv[]) {
                     if (SDL_HasIntersection(&fireballRect, &playerRect)) {
                         fireballs[i].active = false;
                         lives--;
-                        if (hitSound) Mix_PlayChannel(-1, hitSound, 0);
+                        if (soundOn && hitSound) {
+                            Mix_PlayChannel(-1, hitSound, 0);
+                        }
                         if (lives <= 0) {
-                            gameOver = true;
+                            gameState = GAME_OVER;
                         }
                     }
 
@@ -446,7 +626,7 @@ int main(int argc, char* argv[]) {
                 fireballs.end()
             );
 
-            // Sinh ngôi sao
+            // Spawn stars
             starSpawnTimer++;
             if (razzyMode && starSpawnTimer >= starSpawnInterval) {
                 Star star;
@@ -458,7 +638,7 @@ int main(int argc, char* argv[]) {
                 starSpawnTimer = 0;
             }
 
-            // Cập nhật ngôi sao
+            // Update stars
             for (int i = 0; i < stars.size(); i++) {
                 if (stars[i].active) {
                     stars[i].pos.y += static_cast<int>(stars[i].velocityY);
@@ -469,7 +649,9 @@ int main(int argc, char* argv[]) {
                         stars[i].active = false;
                         countdownTime += 5 * 60;
                         if (countdownTime > 20 * 60) countdownTime = 20 * 60;
-                        if (collectStarSound) Mix_PlayChannel(-1, collectStarSound, 0);
+                        if (soundOn && collectStarSound) {
+                            Mix_PlayChannel(-1, collectStarSound, 0);
+                        }
                     }
 
                     if (stars[i].pos.y > 576) {
@@ -482,211 +664,183 @@ int main(int argc, char* argv[]) {
                 stars.end()
             );
 
-            // Cập nhật thời gian hiển thị thông báo Razzy Mode
+            // Update Razzy Mode message timer
             if (razzyModeMessageTimer > 0) {
                 razzyModeMessageTimer--;
             }
         }
 
-        // Xóa màn hình
+        // Clear screen
         SDL_RenderClear(renderer);
-        if (back1_texture) {
-            SDL_RenderCopy(renderer, back1_texture, NULL, NULL);
-        }
-
-        // Hiển thị màn hình game over
-        if (gameOver && font) {
-            string gameOverText = "Game Over";
-            SDL_Surface* gameOverSurface = TTF_RenderText_Blended(font, gameOverText.c_str(), white);
-            if (gameOverSurface) {
-                SDL_Texture* gameOverTexture = SDL_CreateTextureFromSurface(renderer, gameOverSurface);
-                if (gameOverTexture) {
-                    SDL_Rect gameOverRect = {(1024 - gameOverSurface->w) / 2, (576 - gameOverSurface->h) / 2 - 60, gameOverSurface->w, gameOverSurface->h};
-                    SDL_RenderCopy(renderer, gameOverTexture, NULL, &gameOverRect);
-                    SDL_DestroyTexture(gameOverTexture);
-                }
-                SDL_FreeSurface(gameOverSurface);
-            }
-
-            string finalScoreText = "Your Score: " + to_string(score);
-            SDL_Surface* finalScoreSurface = TTF_RenderText_Blended(font, finalScoreText.c_str(), white);
-            if (finalScoreSurface) {
-                SDL_Texture* finalScoreTexture = SDL_CreateTextureFromSurface(renderer, finalScoreSurface);
-                if (finalScoreTexture) {
-                    SDL_Rect finalScoreRect = {(1024 - finalScoreSurface->w) / 2, (576 - finalScoreSurface->h) / 2 - 20, finalScoreSurface->w, finalScoreSurface->h};
-                    SDL_RenderCopy(renderer, finalScoreTexture, NULL, &finalScoreRect);
-                    SDL_DestroyTexture(finalScoreTexture);
-                }
-                SDL_FreeSurface(finalScoreSurface);
-            }
-
-            string highscoreText = "Highscore: " + to_string(highscore);
-            SDL_Surface* highscoreSurface = TTF_RenderText_Blended(font, highscoreText.c_str(), white);
-            if (highscoreSurface) {
-                SDL_Texture* highscoreTexture = SDL_CreateTextureFromSurface(renderer, highscoreSurface);
-                if (highscoreTexture) {
-                    SDL_Rect highscoreRect = {(1024 - highscoreSurface->w) / 2, (576 - highscoreSurface->h) / 2 + 20, highscoreSurface->w, highscoreSurface->h};
-                    SDL_RenderCopy(renderer, highscoreTexture, NULL, &highscoreRect);
-                    SDL_DestroyTexture(highscoreTexture);
-                }
-                SDL_FreeSurface(highscoreSurface);
-            }
-
-            string restartText = "Press R to restart";
-            SDL_Surface* restartSurface = TTF_RenderText_Blended(font, restartText.c_str(), white);
-            if (restartSurface) {
-                SDL_Texture* restartTexture = SDL_CreateTextureFromSurface(renderer, restartSurface);
-                if (restartTexture) {
-                    SDL_Rect restartRect = {(1024 - restartSurface->w) / 2, (576 - restartSurface->h) / 2 + 60, restartSurface->w, restartSurface->h};
-                    SDL_RenderCopy(renderer, restartTexture, NULL, &restartRect);
-                    SDL_DestroyTexture(restartTexture);
-                }
-                SDL_FreeSurface(restartSurface);
-            }
+        if (gameState == MENU) {
+            renderMenu(renderer, font, back0_texture, menuButtons, showInstructionsPanel, closeInstructionsButton);
         } else {
-            // Hiển thị quả cầu lửa
-            if (fireball_texture) {
-                for (const auto& fireball : fireballs) {
-                    if (fireball.active) {
-                        SDL_Rect fireballRect = {fireball.pos.x, fireball.pos.y, fireballWidth, fireballHeight};
-                        SDL_RenderCopy(renderer, fireball_texture, NULL, &fireballRect);
+            if (back1_texture) {
+                SDL_RenderCopy(renderer, back1_texture, NULL, NULL);
+            }
+
+            // Display game over screen
+            if (gameState == GAME_OVER && font) {
+                string gameOverText = "Game Over";
+                SDL_Surface* gameOverSurface = TTF_RenderText_Blended(font, gameOverText.c_str(), white);
+                if (gameOverSurface) {
+                    SDL_Texture* gameOverTexture = SDL_CreateTextureFromSurface(renderer, gameOverSurface);
+                    if (gameOverTexture) {
+                        SDL_Rect gameOverRect = {(1024 - gameOverSurface->w) / 2, (576 - gameOverSurface->h) / 2 - 60, gameOverSurface->w, gameOverSurface->h};
+                        SDL_RenderCopy(renderer, gameOverTexture, NULL, &gameOverRect);
+                        SDL_DestroyTexture(gameOverTexture);
                     }
+                    SDL_FreeSurface(gameOverSurface);
                 }
-            }
 
-            // Hiển thị ngôi sao
-            if (star_texture) {
-                for (const auto& star : stars) {
-                    if (star.active) {
-                        SDL_Rect starRect = {star.pos.x, star.pos.y, starWidth, starHeight};
-                        SDL_RenderCopy(renderer, star_texture, NULL, &starRect);
+                string finalScoreText = "Your Score: " + to_string(score);
+                SDL_Surface* finalScoreSurface = TTF_RenderText_Blended(font, finalScoreText.c_str(), white);
+                if (finalScoreSurface) {
+                    SDL_Texture* finalScoreTexture = SDL_CreateTextureFromSurface(renderer, finalScoreSurface);
+                    if (finalScoreTexture) {
+                        SDL_Rect finalScoreRect = {(1024 - finalScoreSurface->w) / 2, (576 - finalScoreSurface->h) / 2 - 20, finalScoreSurface->w, finalScoreSurface->h};
+                        SDL_RenderCopy(renderer, finalScoreTexture, NULL, &finalScoreRect);
+                        SDL_DestroyTexture(finalScoreTexture);
                     }
+                    SDL_FreeSurface(finalScoreSurface);
                 }
-            }
 
-            // Hiển thị người chơi
-            SDL_Rect playerRect = {playerPos.x, playerPos.y, 64, 64};
-            if (horizontalVelocity != 0 && player_run_texture) {
-                SDL_RenderCopyEx(renderer, player_run_texture, NULL, &playerRect, 0, NULL,
-                                 isMovingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL);
-            } else if (isJumping && player_jump_texture) {
-                SDL_RenderCopy(renderer, player_jump_texture, NULL, &playerRect);
-            } else if (player_stop_texture) {
-                SDL_RenderCopyEx(renderer, player_stop_texture, NULL, &playerRect, 0, NULL,
-                                 isMovingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL);
-            }
-
-            // Hiển thị số mạng (trái tim)
-            if (heart_texture) {
-                for (int i = 0; i < lives; i++) {
-                    SDL_Rect heartRect = {10 + i * (heartWidth + 5), 10, heartWidth, heartHeight};
-                    SDL_RenderCopy(renderer, heart_texture, NULL, &heartRect);
-                }
-            }
-
-            // Hiển thị điểm số
-            if (font) {
-                string scoreText = "Current Score: " + to_string(score);
-                SDL_Surface* scoreSurface = TTF_RenderText_Blended(font, scoreText.c_str(), white);
-                if (scoreSurface) {
-                    SDL_Texture* scoreTexture = SDL_CreateTextureFromSurface(renderer, scoreSurface);
-                    if (scoreTexture) {
-                        SDL_Rect scoreRect = {10, 50, scoreSurface->w, scoreSurface->h};
-                        SDL_RenderCopy(renderer, scoreTexture, NULL, &scoreRect);
-                        SDL_DestroyTexture(scoreTexture);
-                    }
-                    SDL_FreeSurface(scoreSurface);
-                }
-            }
-
-            // Hiển thị điểm cao nhất
-            if (font) {
                 string highscoreText = "Highscore: " + to_string(highscore);
                 SDL_Surface* highscoreSurface = TTF_RenderText_Blended(font, highscoreText.c_str(), white);
                 if (highscoreSurface) {
                     SDL_Texture* highscoreTexture = SDL_CreateTextureFromSurface(renderer, highscoreSurface);
                     if (highscoreTexture) {
-                        SDL_Rect highscoreRect = {10, 80, highscoreSurface->w, highscoreSurface->h};
+                        SDL_Rect highscoreRect = {(1024 - highscoreSurface->w) / 2, (576 - highscoreSurface->h) / 2 + 20, highscoreSurface->w, highscoreSurface->h};
                         SDL_RenderCopy(renderer, highscoreTexture, NULL, &highscoreRect);
                         SDL_DestroyTexture(highscoreTexture);
                     }
                     SDL_FreeSurface(highscoreSurface);
                 }
-            }
 
-            // Hiển thị thời gian đếm ngược
-            if (font) {
-                int secondsLeft = countdownTime / 60;
-                string timerText = "Countdown: " + to_string(secondsLeft);
-                SDL_Surface* timerSurface = TTF_RenderText_Blended(font, timerText.c_str(), white);
-                if (timerSurface) {
-                    SDL_Texture* timerTexture = SDL_CreateTextureFromSurface(renderer, timerSurface);
-                    if (timerTexture) {
-                        SDL_Rect timerRect = {10, 110, timerSurface->w, timerSurface->h};
-                        SDL_RenderCopy(renderer, timerTexture, NULL, &timerRect);
-                        SDL_DestroyTexture(timerTexture);
+                renderButton(renderer, font, restartButton, {100, 100, 100, 255});
+            } else {
+                // Display fireballs
+                if (fireball_texture) {
+                    for (const auto& fireball : fireballs) {
+                        if (fireball.active) {
+                            SDL_Rect fireballRect = {fireball.pos.x, fireball.pos.y, fireballWidth, fireballHeight};
+                            SDL_RenderCopy(renderer, fireball_texture, NULL, &fireballRect);
+                        }
                     }
-                    SDL_FreeSurface(timerSurface);
-                }
-            }
-
-            // Hiển thị thông báo chế độ Razzy
-            if (razzyModeMessageTimer > 0 && font) {
-                string razzyText = "Crazy mode!";
-                SDL_Surface* razzySurface = TTF_RenderText_Blended(font, razzyText.c_str(), white);
-                if (razzySurface) {
-                    SDL_Texture* razzyTexture = SDL_CreateTextureFromSurface(renderer, razzySurface);
-                    if (razzyTexture) {
-                        SDL_Rect razzyRect = {(1024 - razzySurface->w) / 2, 150, razzySurface->w, razzySurface->h};
-                        SDL_RenderCopy(renderer, razzyTexture, NULL, &razzyRect);
-                        SDL_DestroyTexture(razzyTexture);
-                    }
-                    SDL_FreeSurface(razzySurface);
-                }
-            }
-
-            // Hiển thị màn hình tạm dừng
-            if (paused && font) {
-                string pauseText = "Paused";
-                SDL_Surface* pauseSurface = TTF_RenderText_Blended(font, pauseText.c_str(), white);
-                if (pauseSurface) {
-                    SDL_Texture* pauseTexture = SDL_CreateTextureFromSurface(renderer, pauseSurface);
-                    if (pauseTexture) {
-                        SDL_Rect pauseRect = {(1024 - pauseSurface->w) / 2, (576 - pauseSurface->h) / 2 - 20, pauseSurface->w, pauseSurface->h};
-                        SDL_RenderCopy(renderer, pauseTexture, NULL, &pauseRect);
-                        SDL_DestroyTexture(pauseTexture);
-                    }
-                    SDL_FreeSurface(pauseSurface);
                 }
 
-                string pauseScoreText = "Current Score: " + to_string(score);
-                SDL_Surface* pauseScoreSurface = TTF_RenderText_Blended(font, pauseScoreText.c_str(), white);
-                if (pauseScoreSurface) {
-                    SDL_Texture* pauseScoreTexture = SDL_CreateTextureFromSurface(renderer, pauseScoreSurface);
-                    if (pauseScoreTexture) {
-                        SDL_Rect pauseScoreRect = {(1024 - pauseScoreSurface->w) / 2, (576 - pauseScoreSurface->h) / 2 + 20, pauseScoreSurface->w, pauseScoreSurface->h};
-                        SDL_RenderCopy(renderer, pauseScoreTexture, NULL, &pauseScoreRect);
-                        SDL_DestroyTexture(pauseScoreTexture);
+                // Display stars
+                if (star_texture) {
+                    for (const auto& star : stars) {
+                        if (star.active) {
+                            SDL_Rect starRect = {star.pos.x, star.pos.y, starWidth, starHeight};
+                            SDL_RenderCopy(renderer, star_texture, NULL, &starRect);
+                        }
                     }
-                    SDL_FreeSurface(pauseScoreSurface);
+                }
+
+                // Display player
+                SDL_Rect playerRect = {playerPos.x, playerPos.y, 64, 64};
+                if (horizontalVelocity != 0 && player_run_texture) {
+                    SDL_RenderCopyEx(renderer, player_run_texture, NULL, &playerRect, 0, NULL,
+                                     isMovingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL);
+                } else if (isJumping && player_jump_texture) {
+                    SDL_RenderCopy(renderer, player_jump_texture, NULL, &playerRect);
+                } else if (player_stop_texture) {
+                    SDL_RenderCopyEx(renderer, player_stop_texture, NULL, &playerRect, 0, NULL,
+                                     isMovingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL);
+                }
+
+                // Display lives (hearts)
+                if (heart_texture) {
+                    for (int i = 0; i < lives; i++) {
+                        SDL_Rect heartRect = {10 + i * (heartWidth + 5), 10, heartWidth, heartHeight};
+                        SDL_RenderCopy(renderer, heart_texture, NULL, &heartRect);
+                    }
+                }
+
+                // Display current score
+                if (font) {
+                    string scoreText = "Current Score: " + to_string(score);
+                    SDL_Surface* scoreSurface = TTF_RenderText_Blended(font, scoreText.c_str(), white);
+                    if (scoreSurface) {
+                        SDL_Texture* scoreTexture = SDL_CreateTextureFromSurface(renderer, scoreSurface);
+                        if (scoreTexture) {
+                            SDL_Rect scoreRect = {10, 50, scoreSurface->w, scoreSurface->h};
+                            SDL_RenderCopy(renderer, scoreTexture, NULL, &scoreRect);
+                            SDL_DestroyTexture(scoreTexture);
+                        }
+                        SDL_FreeSurface(scoreSurface);
+                    }
+                }
+
+                // Display high score
+                if (font) {
+                    string highscoreText = "Highscore: " + to_string(highscore);
+                    SDL_Surface* highscoreSurface = TTF_RenderText_Blended(font, highscoreText.c_str(), white);
+                    if (highscoreSurface) {
+                        SDL_Texture* highscoreTexture = SDL_CreateTextureFromSurface(renderer, highscoreSurface);
+                        if (highscoreTexture) {
+                            SDL_Rect highscoreRect = {10, 80, highscoreSurface->w, highscoreSurface->h};
+                            SDL_RenderCopy(renderer, highscoreTexture, NULL, &highscoreRect);
+                            SDL_DestroyTexture(highscoreTexture);
+                        }
+                        SDL_FreeSurface(highscoreSurface);
+                    }
+                }
+
+                // Display countdown timer
+                if (font) {
+                    int secondsLeft = countdownTime / 60;
+                    string timerText = "Countdown: " + to_string(secondsLeft);
+                    SDL_Surface* timerSurface = TTF_RenderText_Blended(font, timerText.c_str(), white);
+                    if (timerSurface) {
+                        SDL_Texture* timerTexture = SDL_CreateTextureFromSurface(renderer, timerSurface);
+                        if (timerTexture) {
+                            SDL_Rect timerRect = {10, 110, timerSurface->w, timerSurface->h};
+                            SDL_RenderCopy(renderer, timerTexture, NULL, &timerRect);
+                            SDL_DestroyTexture(timerTexture);
+                        }
+                        SDL_FreeSurface(timerSurface);
+                    }
+                }
+
+                // Display Razzy Mode message
+                if (razzyModeMessageTimer > 0 && font) {
+                    string razzyText = "Crazy mode!";
+                    SDL_Surface* razzySurface = TTF_RenderText_Blended(font, razzyText.c_str(), white);
+                    if (razzySurface) {
+                        SDL_Texture* razzyTexture = SDL_CreateTextureFromSurface(renderer, razzySurface);
+                        if (razzyTexture) {
+                            SDL_Rect razzyRect = {(1024 - razzySurface->w) / 2, 150, razzySurface->w, razzySurface->h};
+                            SDL_RenderCopy(renderer, razzyTexture, NULL, &razzyRect);
+                            SDL_DestroyTexture(razzyTexture);
+                        }
+                        SDL_FreeSurface(razzySurface);
+                    }
+                }
+
+                // Display pause screen with buttons
+                if (gameState == PAUSED) {
+                    renderPaused(renderer, font, pausedButtons, score);
                 }
             }
         }
 
-        // Hiển thị renderer
+        // Present renderer
         SDL_RenderPresent(renderer);
 
-        // Giới hạn FPS ở mức 60
+        // Limit FPS to 60
         Uint32 frameTime = SDL_GetTicks() - frameStart;
         if (frameDelay > frameTime) {
             SDL_Delay(frameDelay - frameTime);
         }
     }
 
-    // Lưu điểm cao nhất trước khi thoát
+    // Save high score before exiting
     saveHighscore(highscore);
 
-    // Dọn dẹp tài nguyên
+    // Clean up resources
     if (back0_texture) SDL_DestroyTexture(back0_texture);
     if (back1_texture) SDL_DestroyTexture(back1_texture);
     if (player_jump_texture) SDL_DestroyTexture(player_jump_texture);
