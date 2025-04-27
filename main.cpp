@@ -9,12 +9,12 @@
 #undef main
 using namespace std;
 
-// Structure to store position (x, y)
+// Struct cho vi tri nhan vat
 struct Position {
     int x, y;
 };
 
-// Structure for fireball
+// Struct cho cau lua
 struct Fireball {
     Position pos;        // Position of the fireball
     float velocityX, velocityY; // Velocity along x and y axes
@@ -22,21 +22,21 @@ struct Fireball {
     bool scored;         // Whether scored or not
 };
 
-// Structure for star
+// Struct cho sao
 struct Star {
     Position pos;        // Position of the star
     float velocityY;     // Falling velocity along y-axis
     bool active;         // Active state
 };
 
-// Structure for button
+// Struct Button cho cac nut bam
 struct Button {
     SDL_Rect rect;       // Position and size of the button
     string text;         // Text displayed on the button
     bool hovered;        // Hover state
 };
 
-// Game states
+// Cac trang thai game
 enum GameState {
     MENU,
     PLAYING,
@@ -44,7 +44,7 @@ enum GameState {
     GAME_OVER
 };
 
-// Function to load high score from file
+// Ham lay diem cao tu file
 int loadHighscore() {
     ifstream file("highscore.txt");
     int highscore = 0;
@@ -55,7 +55,7 @@ int loadHighscore() {
     return highscore;
 }
 
-// Function to save high score to file
+// Ham luu diem cao nhat
 void saveHighscore(int highscore) {
     ofstream file("highscore.txt");
     if (file.is_open()) {
@@ -66,11 +66,11 @@ void saveHighscore(int highscore) {
     }
 }
 
-// Function to render a button
+// Ham tao nut bam
 void renderButton(SDL_Renderer* renderer, TTF_Font* font, Button& button, SDL_Color color) {
     SDL_Rect buttonRect = button.rect;
     if (button.hovered) {
-        buttonRect.w *= 1.1; // Scale up by 10% on hover
+        buttonRect.w *= 1.1; // Tang 10% khi di chuot toi
         buttonRect.h *= 1.1;
     }
 
@@ -86,12 +86,12 @@ void renderButton(SDL_Renderer* renderer, TTF_Font* font, Button& button, SDL_Co
     SDL_DestroyTexture(texture);
 }
 
-// Handle menu events
+// Menu Events
 void handleMenuEvents(SDL_Event& event, vector<Button>& menuButtons, GameState& gameState, bool& running, Mix_Music* backgroundMusic, Mix_Chunk* jumpSound, Mix_Chunk* collectStarSound, Mix_Chunk* hitSound, Mix_Chunk* pauseSound, bool& soundOn, bool& showInstructionsPanel, Button& closeInstructionsButton) {
     int mouseX, mouseY;
     SDL_GetMouseState(&mouseX, &mouseY);
 
-    // Handle menu buttons
+    // Cac nut trong Menu
     for (auto& button : menuButtons) {
         button.hovered = (mouseX >= button.rect.x && mouseX <= button.rect.x + button.rect.w &&
                           mouseY >= button.rect.y && mouseY <= button.rect.y + button.rect.h);
@@ -116,7 +116,7 @@ void handleMenuEvents(SDL_Event& event, vector<Button>& menuButtons, GameState& 
         }
     }
 
-    // Handle close button for instructions panel
+    // Nut close Instructions
     if (showInstructionsPanel) {
         closeInstructionsButton.hovered = (mouseX >= closeInstructionsButton.rect.x && mouseX <= closeInstructionsButton.rect.x + closeInstructionsButton.rect.w &&
                                            mouseY >= closeInstructionsButton.rect.y && mouseY <= closeInstructionsButton.rect.y + closeInstructionsButton.rect.h);
@@ -126,7 +126,7 @@ void handleMenuEvents(SDL_Event& event, vector<Button>& menuButtons, GameState& 
     }
 }
 
-// Handle paused events
+// Paused Events
 void handlePausedEvents(SDL_Event& event, vector<Button>& pausedButtons, GameState& gameState, bool& running, Mix_Chunk* pauseSound, bool soundOn, Position& playerPos, vector<Fireball>& fireballs, vector<Star>& stars, int& spawnTimer, int& starSpawnTimer, int& countdownTime, bool& razzyMode, int& razzyModeMessageTimer, float& fireballSpeed, int& spawnInterval, int& lives, int& score, bool& isJumping, bool& isMovingRight, float& horizontalVelocity, float& verticalVelocity) {
     int mouseX, mouseY;
     SDL_GetMouseState(&mouseX, &mouseY);
@@ -165,7 +165,7 @@ void handlePausedEvents(SDL_Event& event, vector<Button>& pausedButtons, GameSta
     }
 }
 
-// Render menu
+// Render Menu
 void renderMenu(SDL_Renderer* renderer, TTF_Font* font, SDL_Texture* back0_texture, vector<Button>& menuButtons, bool showInstructionsPanel, Button& closeInstructionsButton) {
     if (back0_texture) {
         SDL_RenderCopy(renderer, back0_texture, NULL, NULL);
@@ -175,15 +175,15 @@ void renderMenu(SDL_Renderer* renderer, TTF_Font* font, SDL_Texture* back0_textu
         renderButton(renderer, font, button, {100, 100, 100, 255});
     }
 
-    // Render instructions panel if visible
+    // Sau khi thay duoc Menu Instructions
     if (showInstructionsPanel) {
-        // Draw semi-transparent panel
+        // Dieu chinh Transparency cua Menu Instructions
         SDL_Rect panelRect = {212, 88, 600, 400}; // Centered: (1024-600)/2 = 212, (576-400)/2 = 88
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(renderer, 50, 50, 50, 200); // Semi-transparent gray
         SDL_RenderFillRect(renderer, &panelRect);
 
-        // Draw instructions text
+        // Tao Instructions 
         SDL_Color white = {255, 255, 255, 255};
         vector<string> instructions = {
             "Game Instructions:",
@@ -193,7 +193,7 @@ void renderMenu(SDL_Renderer* renderer, TTF_Font* font, SDL_Texture* back0_textu
             "P: Pause game"
         };
 
-        int yPos = 120; // Start text inside the panel
+        int yPos = 120; // Hien thi text cho Menu Instruction
         for (const auto& line : instructions) {
             SDL_Surface* instructionsSurface = TTF_RenderText_Blended(font, line.c_str(), white);
             if (instructionsSurface) {
@@ -205,19 +205,19 @@ void renderMenu(SDL_Renderer* renderer, TTF_Font* font, SDL_Texture* back0_textu
                 }
                 SDL_FreeSurface(instructionsSurface);
             }
-            yPos += 30; // Move down for the next line
+            yPos += 30; // Xuong dong ke tiep
         }
 
-        // Render close button
+        // Render nut close Instruction
         renderButton(renderer, font, closeInstructionsButton, {100, 100, 100, 255});
     }
 }
 
-// Render paused screen
+// Render man hinh pause game
 void renderPaused(SDL_Renderer* renderer, TTF_Font* font, vector<Button>& pausedButtons, int score) {
     SDL_Color white = {255, 255, 255, 255};
 
-    // Draw "Paused" text
+    // Tao text cho Menu pause game
     SDL_Surface* pausedSurface = TTF_RenderText_Solid(font, "Paused", white);
     if (pausedSurface) {
         SDL_Texture* pausedTexture = SDL_CreateTextureFromSurface(renderer, pausedSurface);
@@ -229,7 +229,7 @@ void renderPaused(SDL_Renderer* renderer, TTF_Font* font, vector<Button>& paused
         SDL_FreeSurface(pausedSurface);
     }
 
-    // Draw current score
+    // Diem hien tai khi pause game
     string pauseScoreText = "Current Score: " + to_string(score);
     SDL_Surface* pauseScoreSurface = TTF_RenderText_Blended(font, pauseScoreText.c_str(), white);
     if (pauseScoreSurface) {
@@ -242,27 +242,27 @@ void renderPaused(SDL_Renderer* renderer, TTF_Font* font, vector<Button>& paused
         SDL_FreeSurface(pauseScoreSurface);
     }
 
-    // Render buttons
+    // Render Menu pause game
     for (auto& button : pausedButtons) {
         renderButton(renderer, font, button, {100, 100, 100, 255});
     }
 }
 
 int main(int argc, char* argv[]) {
-    // Initialize SDL with video and audio
+    // Khoi tao SDL voi VIDEO va AUDIO
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         cerr << "SDL cannot initialize! SDL_Error: " << SDL_GetError() << endl;
         return 1;
     }
 
-    // Initialize SDL_image
+    // Khoi tao SDL_image
     if (!(IMG_Init(IMG_INIT_PNG))) {
         cerr << "SDL_image cannot initialize! IMG_Error: " << IMG_GetError() << endl;
         SDL_Quit();
         return 1;
     }
 
-    // Initialize SDL_ttf
+    // Khoi tao SDL_ttf
     if (TTF_Init() < 0) {
         cerr << "SDL_ttf cannot initialize! TTF_Error: " << TTF_GetError() << endl;
         IMG_Quit();
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Initialize SDL_mixer
+    // Khoi tao SDL_Mixer
     if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
         cerr << "SDL_mixer cannot initialize! SDL_Error: " << Mix_GetError() << endl;
         TTF_Quit();
@@ -279,7 +279,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Create game window
+    // Tao cua so game
     SDL_Window* window = SDL_CreateWindow("DINO RUN",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           1024, 576, SDL_WINDOW_SHOWN);
@@ -292,7 +292,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Create renderer
+    // Tao Renderer
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer) {
         cerr << "Cannot create renderer! SDL_Error: " << SDL_GetError() << endl;
@@ -304,13 +304,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load font
+    // Mo font
     TTF_Font* font = TTF_OpenFont("font.ttf", 20);
     if (!font) {
         cerr << "Cannot load font! TTF_Error: " << TTF_GetError() << endl;
     }
 
-    // Load textures
+    // Mo Texture cho cac elements
     SDL_Texture* back0_texture = IMG_LoadTexture(renderer, "images/back0.png");
     if (!back0_texture) {
         cerr << "Cannot load back0.png! SDL_Error: " << SDL_GetError() << endl;
@@ -351,7 +351,7 @@ int main(int argc, char* argv[]) {
         cerr << "Cannot load sao.png! SDL_Error: " << SDL_GetError() << endl;
     }
 
-    // Load audio with updated relative paths
+    // Mo am thanh game
     Mix_Music* backgroundMusic = Mix_LoadMUS("audio/background_music.mp3");
     if (!backgroundMusic) {
         cerr << "Cannot load background music! SDL_Error: " << Mix_GetError() << endl;
@@ -377,64 +377,64 @@ int main(int argc, char* argv[]) {
         cerr << "Cannot load pause.wav! SDL_Error: " << SDL_GetError() << endl;
     }
 
-    // Game variables
-    bool running = false;           // Variable to exit game
-    GameState gameState = MENU;     // Initial state is MENU
-    int razzyModeMessageTimer = 0;  // Timer for "Razzy Mode!" message
-    const Uint8* currentKeyStates = SDL_GetKeyboardState(NULL); // Keyboard state
+    // Bien game
+    bool running = false;           // Bien exit game
+    GameState gameState = MENU;     // Trang thai ban dau la MENU
+    int razzyModeMessageTimer = 0;  // Thoi gian thong bao Razzy Mode
+    const Uint8* currentKeyStates = SDL_GetKeyboardState(NULL); //Trang thai ban phim
     const int frameDelay = 1000 / 60; // Limit FPS (60 FPS)
 
-    // Player position
-    Position playerPos = {400, 400}; // Initial position
-    bool isJumping = false;          // Jumping state
-    bool isMovingRight = true;       // Movement direction
-    float horizontalVelocity = 0.0f; // Horizontal velocity
-    float verticalVelocity = 0.0f;   // Vertical velocity
-    const float moveSpeed = 5.0f;    // Horizontal movement speed
-    const float jumpForce = -13.0f;  // Jump force
-    const float gravity = 0.5f;      // Gravity
+    // Vi tri nhan vat 
+    Position playerPos = {400, 400}; // Vi tri ban dau
+    bool isJumping = false;          // Trang thai nhay
+    bool isMovingRight = true;       // Huong di chuyen
+    float horizontalVelocity = 0.0f; // Van toc di chuyen co huong
+    float verticalVelocity = 0.0f;   // Van toc nhay
+    const float moveSpeed = 5.0f;    // Toc do di chuyen
+    const float jumpForce = -13.0f;  // Luc nhay
+    const float gravity = 0.5f;      // Trong luc
 
-    // Heart (lives) dimensions
+    // Kich thuoc trai tim
     const int heartWidth = 32;
     const int heartHeight = 32;
 
-    // Fireball variables
-    vector<Fireball> fireballs;      // List of fireballs
-    const int fireballWidth = 50;    // Fireball width
-    const int fireballHeight = 50;   // Fireball height
-    float fireballSpeed = 3.0f;      // Fireball speed
-    int spawnTimer = 0;              // Timer for fireball spawning
-    int spawnInterval = 120;         // Interval between fireball spawns
+    //  Vector Fireball (Cau lua)
+    vector<Fireball> fireballs;      
+    const int fireballWidth = 50;    // Chieu rong cau lua
+    const int fireballHeight = 50;   // Chieu cao cau lua
+    float fireballSpeed = 3.0f;      // Toc do cau lua roi
+    int spawnTimer = 0;              // Dem nguoc spawn cau lua
+    int spawnInterval = 120;         // Khoang thoi gian spawn cau lua
 
-    // Star variables
-    vector<Star> stars;              // List of stars
-    const int starWidth = 64;        // Star width
-    const int starHeight = 64;       // Star height
-    const float starFallSpeed = 2.0f;// Star fall speed
-    const int starSpawnInterval = 300; // Interval between star spawns
-    int starSpawnTimer = 0;          // Timer for star spawning
+    // Vector Star (Sao)
+    vector<Star> stars;              
+    const int starWidth = 64;        // Chieu rong sao
+    const int starHeight = 64;       // Chieu cao sao
+    const float starFallSpeed = 2.0f;// Toc do sao roi
+    const int starSpawnInterval = 300; // Khoang thoi gian spawn sao
+    int starSpawnTimer = 0;          // Dem nguoc spawn sao
 
-    // Game timer
-    int countdownTime = 20 * 60;     // Countdown timer (20 seconds)
-    bool razzyMode = false;          // Razzy mode
+    // Dem nguoc 20s den Razzy Mode
+    int countdownTime = 20 * 60;     
+    bool razzyMode = false;          
 
-    // Lives
+    // Mang
     int lives = 5;
 
-    // Score
+    // Diem
     int score = 0;
     int highscore = loadHighscore();
 
-    // Colors
+    // Mau sac
     SDL_Color white = {255, 255, 255, 255};
 
-    // Sound control
+    // Bat am thanh
     bool soundOn = true;
 
-    // Instructions panel control
+    // Instruction
     bool showInstructionsPanel = false;
 
-    // Initialize menu buttons with "Instructions" button
+    // Vector Button la cac nut bam de choi
     vector<Button> menuButtons = {
         {{112, 200, 200, 50}, "Play", false},
         {{112, 300, 200, 50}, "Sound: On", false},
@@ -442,20 +442,20 @@ int main(int argc, char* argv[]) {
         {{112, 500, 200, 50}, "Instructions", false}
     };
 
-    // Initialize close button for instructions panel
-    Button closeInstructionsButton = {{412, 430, 200, 50}, "Close", false}; // Centered at bottom of 600x400 panel
+    // Dong (Close) Instruction
+    Button closeInstructionsButton = {{412, 430, 200, 50}, "Close", false}; 
 
-    // Initialize paused buttons
+    // Vector nut Pause
     vector<Button> pausedButtons = {
         {{412, 250, 200, 50}, "Resume", false},
         {{412, 350, 200, 50}, "Quit", false},
         {{412, 450, 200, 50}, "Back to Menu", false}
     };
 
-    // Initialize restart button for game over
+    // Restart sau Game Over
     Button restartButton = {{412, 350, 200, 50}, "Restart", false};
 
-    // Start playing music if sound is on
+    // Bat nhac
     if (soundOn && backgroundMusic) {
         Mix_PlayMusic(backgroundMusic, -1);
     }
@@ -466,7 +466,7 @@ int main(int argc, char* argv[]) {
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
 
-        // Handle events
+        // Events Game
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
                 running = false;
@@ -497,7 +497,7 @@ int main(int argc, char* argv[]) {
                 restartButton.hovered = (mouseX >= restartButton.rect.x && mouseX <= restartButton.rect.x + restartButton.rect.w &&
                                         mouseY >= restartButton.rect.y && mouseY <= restartButton.rect.y + restartButton.rect.h);
                 if (e.type == SDL_MOUSEBUTTONDOWN && restartButton.hovered) {
-                    // Reset game state
+                    // Reset thuoc tinh game
                     gameState = PLAYING;
                     playerPos = {400, 400};
                     isJumping = false;
@@ -519,9 +519,8 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Update game logic if not paused or in game over state
+        // Update logic game neu van con choi
         if (gameState == PLAYING) {
-            // Horizontal movement
             horizontalVelocity = 0.0f;
             if (currentKeyStates[SDL_SCANCODE_A]) {
                 horizontalVelocity = -moveSpeed;
@@ -532,12 +531,12 @@ int main(int argc, char* argv[]) {
                 isMovingRight = true;
             }
 
-            // Update horizontal position
+            // Update nhan vat di chuyen
             playerPos.x += static_cast<int>(horizontalVelocity);
             if (playerPos.x < 0) playerPos.x = 0;
             if (playerPos.x > 1024 - 64) playerPos.x = 1024 - 64;
 
-            // Update vertical position (jumping)
+            // Update nhan vat nhay
             if (isJumping) {
                 playerPos.y += static_cast<int>(verticalVelocity);
                 verticalVelocity += gravity;
@@ -548,7 +547,7 @@ int main(int argc, char* argv[]) {
                 verticalVelocity = 0.0f;
             }
 
-            // Countdown logic and Razzy mode
+            // Countdown logic de chuyen sang Razzy Mode
             if (!razzyMode) {
                 countdownTime--;
                 if (countdownTime <= 0) {
@@ -567,7 +566,7 @@ int main(int argc, char* argv[]) {
                 if (countdownTime < 0) countdownTime = 0;
             }
 
-            // Spawn fireballs
+            // Tao cau lua
             spawnTimer++;
             if (spawnTimer >= spawnInterval) {
                 Fireball fireball;
@@ -589,7 +588,7 @@ int main(int argc, char* argv[]) {
                 spawnTimer = 0;
             }
 
-            // Update fireballs
+            // Update cau lua
             for (int i = 0; i < fireballs.size(); i++) {
                 if (fireballs[i].active) {
                     fireballs[i].pos.x += static_cast<int>(fireballs[i].velocityX);
@@ -626,7 +625,7 @@ int main(int argc, char* argv[]) {
                 fireballs.end()
             );
 
-            // Spawn stars
+            // Tao sao  
             starSpawnTimer++;
             if (razzyMode && starSpawnTimer >= starSpawnInterval) {
                 Star star;
@@ -638,7 +637,7 @@ int main(int argc, char* argv[]) {
                 starSpawnTimer = 0;
             }
 
-            // Update stars
+            // Update sao (stars)
             for (int i = 0; i < stars.size(); i++) {
                 if (stars[i].active) {
                     stars[i].pos.y += static_cast<int>(stars[i].velocityY);
@@ -664,13 +663,13 @@ int main(int argc, char* argv[]) {
                 stars.end()
             );
 
-            // Update Razzy Mode message timer
+            // Countdown thoi gian Razzy Mode
             if (razzyModeMessageTimer > 0) {
                 razzyModeMessageTimer--;
             }
         }
 
-        // Clear screen
+        // Clear man hinh
         SDL_RenderClear(renderer);
         if (gameState == MENU) {
             renderMenu(renderer, font, back0_texture, menuButtons, showInstructionsPanel, closeInstructionsButton);
@@ -679,7 +678,7 @@ int main(int argc, char* argv[]) {
                 SDL_RenderCopy(renderer, back1_texture, NULL, NULL);
             }
 
-            // Display game over screen
+            // Hien thi Game Over
             if (gameState == GAME_OVER && font) {
                 string gameOverText = "Game Over";
                 SDL_Surface* gameOverSurface = TTF_RenderText_Blended(font, gameOverText.c_str(), white);
@@ -719,7 +718,7 @@ int main(int argc, char* argv[]) {
 
                 renderButton(renderer, font, restartButton, {100, 100, 100, 255});
             } else {
-                // Display fireballs
+                // Hien thi qua cau lua (fireballs)
                 if (fireball_texture) {
                     for (const auto& fireball : fireballs) {
                         if (fireball.active) {
@@ -729,7 +728,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display stars
+                // Hien thi sao (stars)
                 if (star_texture) {
                     for (const auto& star : stars) {
                         if (star.active) {
@@ -739,7 +738,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display player
+                // Hien thi nhan vat (player)
                 SDL_Rect playerRect = {playerPos.x, playerPos.y, 64, 64};
                 if (horizontalVelocity != 0 && player_run_texture) {
                     SDL_RenderCopyEx(renderer, player_run_texture, NULL, &playerRect, 0, NULL,
@@ -751,7 +750,7 @@ int main(int argc, char* argv[]) {
                                      isMovingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL);
                 }
 
-                // Display lives (hearts)
+                // Hien thi mang (trai tim)
                 if (heart_texture) {
                     for (int i = 0; i < lives; i++) {
                         SDL_Rect heartRect = {10 + i * (heartWidth + 5), 10, heartWidth, heartHeight};
@@ -759,7 +758,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display current score
+                // Hien thi diem hien tai
                 if (font) {
                     string scoreText = "Current Score: " + to_string(score);
                     SDL_Surface* scoreSurface = TTF_RenderText_Blended(font, scoreText.c_str(), white);
@@ -774,7 +773,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display high score
+                // Hien thi diem cao nhat
                 if (font) {
                     string highscoreText = "Highscore: " + to_string(highscore);
                     SDL_Surface* highscoreSurface = TTF_RenderText_Blended(font, highscoreText.c_str(), white);
@@ -789,7 +788,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display countdown timer
+                // Hien thi thoi gian Countdown
                 if (font) {
                     int secondsLeft = countdownTime / 60;
                     string timerText = "Countdown: " + to_string(secondsLeft);
@@ -805,7 +804,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display Razzy Mode message
+                // Hien thi thong bao Razzy Mode
                 if (razzyModeMessageTimer > 0 && font) {
                     string razzyText = "Crazy mode!";
                     SDL_Surface* razzySurface = TTF_RenderText_Blended(font, razzyText.c_str(), white);
@@ -820,27 +819,27 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Display pause screen with buttons
+                // Hien thi man hinh Pause
                 if (gameState == PAUSED) {
                     renderPaused(renderer, font, pausedButtons, score);
                 }
             }
         }
 
-        // Present renderer
+        // Render man hinh
         SDL_RenderPresent(renderer);
 
-        // Limit FPS to 60
+        // Limit FPS 60
         Uint32 frameTime = SDL_GetTicks() - frameStart;
         if (frameDelay > frameTime) {
             SDL_Delay(frameDelay - frameTime);
         }
     }
 
-    // Save high score before exiting
+    // Luu diem cao nhat
     saveHighscore(highscore);
 
-    // Clean up resources
+    // Don dep 
     if (back0_texture) SDL_DestroyTexture(back0_texture);
     if (back1_texture) SDL_DestroyTexture(back1_texture);
     if (player_jump_texture) SDL_DestroyTexture(player_jump_texture);
