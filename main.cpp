@@ -16,24 +16,24 @@ struct Position {
 
 // Struct cho cau lua
 struct Fireball {
-    Position pos;        // Position of the fireball
-    float velocityX, velocityY; // Velocity along x and y axes
-    bool active;         // Active state
-    bool scored;         // Whether scored or not
+    Position pos;        // vi tri cau lua
+    float velocityX, velocityY; // van toc theo truc x, y
+    bool active;         // trang thai dang hoat dong
+    bool scored;         // ghi diem
 };
 
 // Struct cho sao
 struct Star {
-    Position pos;        // Position of the star
-    float velocityY;     // Falling velocity along y-axis
-    bool active;         // Active state
+    Position pos;        // vi tri sao 
+    float velocityY;     // van toc theo truc y
+    bool active;         // trang thai dang hoat dong
 };
 
 // Struct Button cho cac nut bam
 struct Button {
-    SDL_Rect rect;       // Position and size of the button
-    string text;         // Text displayed on the button
-    bool hovered;        // Hover state
+    SDL_Rect rect;       // vi tri va kich co cua nut
+    string text;         // chu tren nut
+    bool hovered;        // trang thai khi tro chuot vao nut
 };
 
 // Cac trang thai game
